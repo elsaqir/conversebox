@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/use-mobile";
 
 interface Message {
+  id?: string;
   text: string;
   isBot: boolean;
   fileUrl?: string;
@@ -24,6 +25,7 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [controller, setController] = useState<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -139,11 +141,45 @@ const Index = () => {
     }
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      await supabase
+        .from("messages")
+        .delete()
+        .eq("id", messageId);
+
+      setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+      queryClient.invalidateQueries({ queryKey: ["messages", currentConversationId] });
+      
+      toast({
+        title: "Message deleted",
+        description: "The message has been removed from the conversation.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete the message. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleStopGeneration = () => {
+    if (controller) {
+      controller.abort();
+      setController(null);
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (message: string, file?: File) => {
     if (!currentConversationId) {
       const conversation = await createConversation.mutateAsync();
       setCurrentConversationId(conversation.id);
     }
+
+    const newController = new AbortController();
+    setController(newController);
 
     const newMessage: Message = {
       text: message,
@@ -163,30 +199,45 @@ const Index = () => {
       
       const contextPrompt = `Previous conversation:\n${lastMessages}\n\nNew message: ${message}`;
       
-      await addMessage.mutateAsync({
+      const userMessage = await addMessage.mutateAsync({
         content: message,
         isBot: false,
         conversationId: currentConversationId!,
       });
 
-      const response = await generateResponse(contextPrompt, file);
-      const botMessage: Message = { text: response, isBot: true };
-      setMessages((prev) => [...prev, botMessage]);
+      if (userMessage) {
+        newMessage.id = userMessage.id;
+      }
 
-      await addMessage.mutateAsync({
+      const response = await generateResponse(contextPrompt, file);
+      const botMessage = await addMessage.mutateAsync({
         content: response,
         isBot: true,
         conversationId: currentConversationId!,
       });
 
+      setMessages((prev) => [...prev, { 
+        id: botMessage?.id,
+        text: response, 
+        isBot: true 
+      }]);
+
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate response. Please try again.",
-        variant: "destructive",
-      });
+      if (error.name === 'AbortError') {
+        toast({
+          title: "Generation stopped",
+          description: "The response generation was stopped.",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to generate response. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
+      setController(null);
     }
   };
 
@@ -253,12 +304,13 @@ const Index = () => {
             <div className="max-w-3xl mx-auto">
               {messages.map((message, index) => (
                 <ChatMessage
-                  key={index}
+                  key={message.id || index}
                   message={message.text}
                   isBot={message.isBot}
                   animate={index === messages.length - 1}
                   fileUrl={message.fileUrl}
                   fileType={message.fileType}
+                  onDelete={message.id ? () => handleDeleteMessage(message.id!) : undefined}
                 />
               ))}
               {isLoading && (
@@ -276,7 +328,12 @@ const Index = () => {
         </main>
 
         <div className="max-w-3xl mx-auto w-full p-4">
-          <ChatInput onSend={handleSendMessage} disabled={isLoading} />
+          <ChatInput 
+            onSend={handleSendMessage} 
+            onStopGeneration={handleStopGeneration}
+            disabled={isLoading} 
+            isGenerating={isLoading}
+          />
         </div>
       </div>
     </div>
