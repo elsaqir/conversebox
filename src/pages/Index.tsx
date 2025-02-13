@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, Menu } from "lucide-react";
+import { Plus, Menu, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/use-mobile";
@@ -113,6 +113,37 @@ const Index = () => {
     onSuccess: () => {
       refetchMessages();
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+
+  const deleteConversation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      await supabase
+        .from("messages")
+        .delete()
+        .eq("conversation_id", conversationId);
+      
+      await supabase
+        .from("conversations")
+        .delete()
+        .eq("id", conversationId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (conversations?.length === 1) {
+        handleNewChat();
+      }
+      toast({
+        title: "Conversation deleted",
+        description: "The conversation has been removed.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete the conversation.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -245,12 +276,12 @@ const Index = () => {
     <div className="flex h-screen max-h-screen bg-background">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-20 flex h-full w-64 flex-col glass border-r transition-transform duration-300 md:relative",
+          "fixed inset-y-0 left-0 z-20 flex h-full w-72 flex-col glass border-r transition-transform duration-300 md:relative",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         <div className="flex h-14 items-center justify-between gap-2 border-b px-4">
-          <h2 className="font-semibold">Conversations</h2>
+          <h2 className="font-semibold text-lg">Conversations</h2>
           <Button size="icon" variant="outline" onClick={handleNewChat}>
             <Plus size={18} />
           </Button>
@@ -258,34 +289,47 @@ const Index = () => {
         <ScrollArea className="flex-1">
           <div className="space-y-2 p-4">
             {conversations?.map((conversation) => (
-              <button
+              <div
                 key={conversation.id}
-                onClick={() => {
-                  setCurrentConversationId(conversation.id);
-                  if (isMobile) setSidebarOpen(false);
-                }}
-                className={cn(
-                  "w-full rounded-lg p-3 text-left text-sm transition-colors hover:bg-muted",
-                  conversation.id === currentConversationId && "bg-muted"
-                )}
+                className="group relative"
               >
-                <div className="line-clamp-1 font-medium">
-                  {conversation.title || "New Chat"}
-                </div>
-                {conversation.last_message && (
-                  <div className="line-clamp-1 text-xs text-muted-foreground">
-                    {conversation.last_message}
+                <button
+                  onClick={() => {
+                    setCurrentConversationId(conversation.id);
+                    if (isMobile) setSidebarOpen(false);
+                  }}
+                  className={cn(
+                    "w-full rounded-lg p-3 text-left text-sm transition-colors hover:bg-muted relative",
+                    "group-hover:pr-12", // Make space for delete button
+                    conversation.id === currentConversationId && "bg-muted"
+                  )}
+                >
+                  <div className="line-clamp-1 font-medium">
+                    {conversation.title || "New Chat"}
                   </div>
-                )}
-              </button>
+                  {conversation.last_message && (
+                    <div className="line-clamp-1 text-xs text-muted-foreground mt-1">
+                      {conversation.last_message}
+                    </div>
+                  )}
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => deleteConversation.mutate(conversation.id)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8"
+                >
+                  <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive transition-colors" />
+                </Button>
+              </div>
             ))}
           </div>
         </ScrollArea>
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="glass border-b px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <header className="glass border-b px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -294,13 +338,15 @@ const Index = () => {
             >
               <Menu size={18} />
             </Button>
-            <h1 className="text-lg font-semibold">Gemini Chat</h1>
+            <h1 className="text-lg font-semibold bg-gradient-to-r from-primary to-primary/50 bg-clip-text text-transparent">
+              Gemini Chat
+            </h1>
           </div>
           <ThemeToggle />
         </header>
 
-        <main className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full">
+        <main className="flex-1 overflow-hidden relative">
+          <ScrollArea className="h-full bg-gradient-to-b from-background to-background/50">
             <div className="max-w-3xl mx-auto">
               {messages.map((message, index) => (
                 <ChatMessage
@@ -325,6 +371,7 @@ const Index = () => {
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background to-transparent h-20 pointer-events-none" />
         </main>
 
         <div className="max-w-3xl mx-auto w-full p-4">
