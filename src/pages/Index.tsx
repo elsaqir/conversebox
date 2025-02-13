@@ -4,7 +4,7 @@ import ChatInput from "@/components/ChatInput";
 import ThemeToggle from "@/components/ThemeToggle";
 import { generateResponse } from "@/lib/gemini";
 import { useToast } from "@/components/ui/use-toast";
-import { useQuery, useMutation, QueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Plus, Menu } from "lucide-react";
@@ -25,6 +25,7 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const queryClient = useQueryClient();
 
   // Fetch conversations
   const { data: conversations } = useQuery({
@@ -188,7 +189,6 @@ const Index = () => {
 
   return (
     <div className="flex h-screen max-h-screen bg-background">
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-20 flex h-full w-64 flex-col glass border-r transition-transform duration-300 md:relative",
@@ -229,7 +229,6 @@ const Index = () => {
         </ScrollArea>
       </aside>
 
-      {/* Main Content */}
       <div className="flex flex-1 flex-col">
         <header className="glass border-b px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
