@@ -15,6 +15,8 @@ import { useMediaQuery } from "@/hooks/use-mobile";
 interface Message {
   text: string;
   isBot: boolean;
+  fileUrl?: string;
+  fileType?: string;
 }
 
 const Index = () => {
@@ -27,7 +29,6 @@ const Index = () => {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const queryClient = useQueryClient();
 
-  // Fetch conversations
   const { data: conversations } = useQuery({
     queryKey: ["conversations"],
     queryFn: async () => {
@@ -39,7 +40,6 @@ const Index = () => {
     },
   });
 
-  // Fetch messages for current conversation
   const { data: currentMessages, refetch: refetchMessages } = useQuery({
     queryKey: ["messages", currentConversationId],
     queryFn: async () => {
@@ -54,7 +54,6 @@ const Index = () => {
     enabled: !!currentConversationId,
   });
 
-  // Update messages when conversation changes
   useEffect(() => {
     if (currentMessages) {
       setMessages(
@@ -66,7 +65,6 @@ const Index = () => {
     }
   }, [currentMessages]);
 
-  // Create new conversation
   const createConversation = useMutation({
     mutationFn: async () => {
       const { data } = await supabase
@@ -81,7 +79,6 @@ const Index = () => {
     },
   });
 
-  // Add message to conversation
   const addMessage = useMutation({
     mutationFn: async ({
       content,
@@ -104,7 +101,6 @@ const Index = () => {
         .select()
         .single();
 
-      // Update last message in conversation
       await supabase
         .from("conversations")
         .update({ last_message: content })
@@ -143,33 +139,40 @@ const Index = () => {
     }
   };
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, file?: File) => {
     if (!currentConversationId) {
       const conversation = await createConversation.mutateAsync();
       setCurrentConversationId(conversation.id);
     }
 
-    const newMessage: Message = { text: message, isBot: false };
+    const newMessage: Message = {
+      text: message,
+      isBot: false,
+      fileUrl: file ? URL.createObjectURL(file) : undefined,
+      fileType: file?.type
+    };
+    
     setMessages((prev) => [...prev, newMessage]);
     setIsLoading(true);
 
     try {
-      // Get last 20 messages for context
-      const lastMessages = messages.slice(-20).map(m => m.text).join("\n");
+      const lastMessages = messages
+        .slice(-20)
+        .map(m => m.text)
+        .join("\n");
+      
       const contextPrompt = `Previous conversation:\n${lastMessages}\n\nNew message: ${message}`;
       
-      // Save user message
       await addMessage.mutateAsync({
         content: message,
         isBot: false,
         conversationId: currentConversationId!,
       });
 
-      const response = await generateResponse(contextPrompt);
+      const response = await generateResponse(contextPrompt, file);
       const botMessage: Message = { text: response, isBot: true };
       setMessages((prev) => [...prev, botMessage]);
 
-      // Save bot message
       await addMessage.mutateAsync({
         content: response,
         isBot: true,
@@ -254,6 +257,8 @@ const Index = () => {
                   message={message.text}
                   isBot={message.isBot}
                   animate={index === messages.length - 1}
+                  fileUrl={message.fileUrl}
+                  fileType={message.fileType}
                 />
               ))}
               {isLoading && (
